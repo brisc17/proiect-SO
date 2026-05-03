@@ -309,3 +309,153 @@ int op_update_threshold(const char *district, int value,
 
     return 0;
 }
+
+int op_remove_report(const char *district, int report_id,const char *user, int role) {
+ 
+    //doar managerul poate sterge rapoarte 
+    if (role != role_manager) {
+        fprintf(stderr, "ERROR: Only managers can remove reports\n");
+        return -1;
+    }
+ 
+    char reports_path[PATH_LEN];
+    build_path(reports_path, district, "reports.dat");
+ 
+    //Verificam permisiunea de scriere 
+    if (!check_permission(reports_path, role, 1)) {
+        fprintf(stderr, "ERROR: No write permission on reports.dat\n");
+        return -1;
+    }
+ 
+    int fd = open(reports_path, O_RDWR);
+    if (fd < 0) {
+        fprintf(stderr, "ERROR: Cannot open reports.dat: %s\n", strerror(errno));
+        return -1;
+    }
+ 
+    //calculam numarul total de rapoarte 
+    struct stat st;
+    fstat(fd, &st);
+    int total = (int)(st.st_size / sizeof(Report));
+ 
+    if (report_id < 0 || report_id >= total) {
+        fprintf(stderr, "ERROR: Report ID %d not found (total: %d)\n",
+                report_id, total);
+        close(fd);
+        return -1;
+    }
+ 
+    
+    for (int i = report_id + 1; i < total; i++) {
+        Report r;
+ 
+        /* Citim raportul de la pozitia i */
+        off_t src = (off_t)i * sizeof(Report);
+        if (lseek(fd, src, SEEK_SET) < 0) {
+            fprintf(stderr, "ERROR: lseek failed: %s\n", strerror(errno));
+            close(fd);
+            return -1;
+        }
+        if (read(fd, &r, sizeof(Report)) != sizeof(Report)) {
+            fprintf(stderr, "ERROR: Failed to read report %d\n", i);
+            close(fd);
+            return -1;
+        }
+      
+        r.id = i - 1;
+       
+        off_t dst = (off_t)(i - 1) * sizeof(Report);
+        if (lseek(fd, dst, SEEK_SET) < 0) {
+            fprintf(stderr, "ERROR: lseek failed: %s\n", strerror(errno));
+            close(fd);
+            return -1;
+        }
+        if (write(fd, &r, sizeof(Report)) != sizeof(Report)) {
+            fprintf(stderr, "ERROR: Failed to write report %d\n", i - 1);
+            close(fd);
+            return -1;
+        }
+    }
+ 
+    //trunchilem fisierul: eliminam ultimul slot-ramas duplicat
+    off_t new_size = (off_t)(total - 1) * sizeof(Report);
+    if (ftruncate(fd, new_size) < 0) {
+        fprintf(stderr, "ERROR: ftruncate failed: %s\n", strerror(errno));
+        close(fd);
+        return -1;
+    }
+ 
+    close(fd);
+ 
+    printf("SUCCESS: Report #%d removed from district '%s'\n",
+           report_id, district);
+ 
+    char action_desc[64];
+    snprintf(action_desc, sizeof(action_desc), "remove_report id=%d", report_id);
+    log_action(district, user, role, action_desc);
+ 
+    return 0;
+}
+ 
+ 
+int op_remove_district(const char *district, const char *user, int role) {
+ 
+    //doar managerul poate sterge un district 
+    if (role != role_manager) {
+        fprintf(stderr, "ERROR: Only managers can remove districts\n");
+        return -1;
+    }
+ 
+    //verificam ca directorul districtului exista 
+    char dir_path[PATH_LEN];
+    build_path(dir_path, district, NULL);
+ 
+    struct stat st;
+    if (stat(dir_path, &st) < 0) {
+        fprintf(stderr, "ERROR: District '%s' does not exist\n", district);
+        return -1;
+    }
+    if (!S_ISDIR(st.st_mode)) {
+        fprintf(stderr, "ERROR: '%s' is not a directory\n", dir_path);
+        return -1;
+    }
+ 
+    printf("Removing district '%s' (directory: %s)...\n", district, dir_path);
+ 
+    //fork(): cream procesul copil
+    pid_t pid = fork();
+ 
+    if (pid < 0) {
+        fprintf(stderr, "ERROR: fork() failed: %s\n", strerror(errno));
+        return -1;
+    }
+ 
+    if (pid == 0) {
+        //PROCESUL COPIL 
+        //execl inlocuieste imaginea procesului cu /bin/rm
+        //Argumentele: argv[0]="rm", argv[1]="-rf", argv[2]=dir_path 
+        execl("/bin/rm", "rm", "-rf", dir_path, (char *)NULL);
+ 
+        //daca execl() returneaza, inseamna ca a esuat 
+        fprintf(stderr, "ERROR: execl() failed: %s\n", strerror(errno));
+        exit(1);
+    }
+ 
+    //PROCESUL PARINTE 
+    //asteptam sa termine copilul (rm) 
+    int status;
+    if (waitpid(pid, &status, 0) < 0) {
+        fprintf(stderr, "ERROR: waitpid() failed: %s\n", strerror(errno));
+        return -1;
+    }
+ 
+    //verificam exit status-ul copilului 
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        fprintf(stderr, "ERROR: rm -rf failed with exit status %d\n",
+                WEXITSTATUS(status));
+        return -1;
+    }
+ 
+   
+    return 0;
+}
