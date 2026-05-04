@@ -349,42 +349,24 @@ int op_remove_report(const char *district, int report_id,const char *user, int r
     for (int i = report_id + 1; i < total; i++) {
         Report r;
  
-        /* Citim raportul de la pozitia i */
+        //Citim raportul de la pozitia i */
         off_t src = (off_t)i * sizeof(Report);
-        if (lseek(fd, src, SEEK_SET) < 0) {
-            fprintf(stderr, "ERROR: lseek failed: %s\n", strerror(errno));
-            close(fd);
-            return -1;
-        }
-        if (read(fd, &r, sizeof(Report)) != sizeof(Report)) {
-            fprintf(stderr, "ERROR: Failed to read report %d\n", i);
-            close(fd);
-            return -1;
-        }
-      
-        r.id = i - 1;
-       
-        off_t dst = (off_t)(i - 1) * sizeof(Report);
-        if (lseek(fd, dst, SEEK_SET) < 0) {
-            fprintf(stderr, "ERROR: lseek failed: %s\n", strerror(errno));
-            close(fd);
-            return -1;
-        }
-        if (write(fd, &r, sizeof(Report)) != sizeof(Report)) {
-            fprintf(stderr, "ERROR: Failed to write report %d\n", i - 1);
-            close(fd);
-            return -1;
-        }
+        lseek(fd,src,SEEK_SET);
+        read(fd,&r,sizeof(Report));
+
+        //actualizam id-ul
+        r.id=i-1;
+
+        //scriem la pozitia i-1
+        lseek(fd,(off_t)(i-1) * sizeof(Report),SEEK_SET);
+        write(fd,&r,sizeof(Report));
+
     }
  
     //trunchilem fisierul: eliminam ultimul slot-ramas duplicat
     off_t new_size = (off_t)(total - 1) * sizeof(Report);
-    if (ftruncate(fd, new_size) < 0) {
-        fprintf(stderr, "ERROR: ftruncate failed: %s\n", strerror(errno));
-        close(fd);
-        return -1;
-    }
- 
+    ftruncate(fd,new_size);
+   
     close(fd);
  
     printf("SUCCESS: Report #%d removed from district '%s'\n",
@@ -410,18 +392,7 @@ int op_remove_district(const char *district, const char *user, int role) {
     char dir_path[PATH_LEN];
     build_path(dir_path, district, NULL);
  
-    struct stat st;
-    if (stat(dir_path, &st) < 0) {
-        fprintf(stderr, "ERROR: District '%s' does not exist\n", district);
-        return -1;
-    }
-    if (!S_ISDIR(st.st_mode)) {
-        fprintf(stderr, "ERROR: '%s' is not a directory\n", dir_path);
-        return -1;
-    }
- 
-    printf("Removing district '%s' (directory: %s)...\n", district, dir_path);
- 
+  
     //fork(): cream procesul copil
     pid_t pid = fork();
  
@@ -439,23 +410,19 @@ int op_remove_district(const char *district, const char *user, int role) {
         //daca execl() returneaza, inseamna ca a esuat 
         fprintf(stderr, "ERROR: execl() failed: %s\n", strerror(errno));
         exit(1);
+    } else {//PROCESUL PARINTE
+        int status;
+        waitpid(pid,&status,0);
+        if(WIFEXITED(status)){
+            printf("District '%s' removed with status %d\n",district,WEXITSTATUS(status));
+        }
     }
- 
-    //PROCESUL PARINTE 
-    //asteptam sa termine copilul (rm) 
-    int status;
-    if (waitpid(pid, &status, 0) < 0) {
-        fprintf(stderr, "ERROR: waitpid() failed: %s\n", strerror(errno));
-        return -1;
-    }
- 
-    //verificam exit status-ul copilului 
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        fprintf(stderr, "ERROR: rm -rf failed with exit status %d\n",
-                WEXITSTATUS(status));
-        return -1;
-    }
- 
-   
+    //stergem si simlink-ul 
+    char symplink_path[PATH_LEN];
+    snprintf(symplink_path,PATH_LEN,"active_reports-%s",district);
+    unlink(symlink_path);
+    printf("Symlink '%s' removed\n",symlink_path);
+
     return 0;
 }
+

@@ -44,6 +44,8 @@ int  op_view(const char *district,int report_id,const char *user,int role);
 int  op_update_threshold(const char *district,int value,const char *user,int role);
 int  op_filter(const char *district,int argc,char *argv[],int cond_start,
                const char *user,int role);
+int op_remove_district(const char *district, const char *user, int role);
+int op_remove_report(const char *district, int report_id,const char *user, int role);
 
 ///fct de utilizare/creare
 void build_path(char *out,const char *district,const char *filename);
