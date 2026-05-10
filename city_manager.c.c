@@ -47,6 +47,7 @@ int main(int argc, char *argv[]){
                  strcmp(argv[i], "--list") == 0 ||
                  strcmp(argv[i], "--view") == 0 ||
                  strcmp(argv[i], "--remove_report") == 0 ||
+                 strcmp(argv[i], "--remove_district") == 0 ||
                  strcmp(argv[i], "--update_threshold") == 0 ||
                  strcmp(argv[i], "--filter") == 0) {
             //salvam operatia si indexul primului argument al ei 
@@ -128,6 +129,26 @@ int main(int argc, char *argv[]){
         int value = atoi(argv[op_arg_poz + 1]);
         return op_update_threshold(argv[op_arg_poz], value, user_extras, role);
     }
+
+    // --remove_report <district> <report_id> 
+    if (strcmp(operation, "remove_report") == 0) {
+        if (op_arg_poz + 1 >= argc) {
+            fprintf(stderr, "ERROR: --remove_report requires <district> <report_id>\n");
+            return 1;
+        }
+        int report_id = atoi(argv[op_arg_poz + 1]);
+        return op_remove_report(argv[op_arg_poz], report_id, user_extras, role);
+    }
+
+    //--remove_district <district> 
+    if (strcmp(operation, "remove_district") == 0) {
+        if (op_arg_poz >= argc) {
+            fprintf(stderr, "ERROR: --remove_district requires <district>\n");
+            return 1;
+        }
+        return op_remove_district(argv[op_arg_poz], user_extras, role);
+    }
+
 
     //--filter <district> <cond1> [cond2...] 
     if (strcmp(operation, "filter") == 0) {

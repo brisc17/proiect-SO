@@ -7,8 +7,13 @@
 #include <sys/types.h>
 #include <time.h>
 #include <errno.h>
+#include <signal.h>
+#include <sys/wait.h>
 
 #include "city_manager.h"
+
+
+#define PID_FILE ".monitor_pid"
 
 
 int op_add(const char *district, const char *user, int role){
@@ -122,10 +127,30 @@ int op_add(const char *district, const char *user, int role){
 
     //logam actiunea
     char action_desc[256];
-     snprintf(action_desc, sizeof(action_desc),
-            "add report #%d category=%s severity=%d", r.id, r.category, r.severity);
-    log_action(district,user,role,action_desc);
+    
+    //PH2
+    int fd_pid=open(PID_FILE,O_RDONLY);
+    if(fd_pid<0){
+        printf("pid file NOT FOUND\n");
+    }else{
+        char pid_buf[32];
+        memset(pid_buf,0,sizeof(pid_buf));
+        read(fd_pid,pid_buf,sizeof(pid_buf)-1);
+        close(fd_pid);
 
+        pid_t monitor_pid=(pid_t)atoi(pid_buf);
+        if(kill(monitor_pid,SIGUSR1)<0){
+            printf("signal was NOT TRANSMITED to monitor\n");
+        }else {
+            printf("[monitor] SIGUSR1 sent to monitor (PID=%d)\n", (int)monitor_pid);
+            snprintf(action_desc, sizeof(action_desc),
+            "add report #%d category=%s severity=%d; monitor notified via SIGUSR1",
+            r.id, r.category, r.severity);
+        }
+
+    }
+
+    log_action(district,user,role,action_desc);
     return 0;
 
 }
@@ -310,6 +335,7 @@ int op_update_threshold(const char *district, int value,
     return 0;
 }
 
+
 int op_remove_report(const char *district, int report_id,const char *user, int role) {
  
     //doar managerul poate sterge rapoarte 
@@ -349,7 +375,7 @@ int op_remove_report(const char *district, int report_id,const char *user, int r
     for (int i = report_id + 1; i < total; i++) {
         Report r;
  
-        //Citim raportul de la pozitia i */
+        //Citim raportul de la pozitia i 
         off_t src = (off_t)i * sizeof(Report);
         lseek(fd,src,SEEK_SET);
         read(fd,&r,sizeof(Report));
@@ -378,8 +404,7 @@ int op_remove_report(const char *district, int report_id,const char *user, int r
  
     return 0;
 }
- 
- 
+
 int op_remove_district(const char *district, const char *user, int role) {
  
     //doar managerul poate sterge un district 
@@ -420,9 +445,8 @@ int op_remove_district(const char *district, const char *user, int role) {
     //stergem si simlink-ul 
     char symplink_path[PATH_LEN];
     snprintf(symplink_path,PATH_LEN,"active_reports-%s",district);
-    unlink(symlink_path);
-    printf("Symlink '%s' removed\n",symlink_path);
+    unlink(symplink_path);
+    printf("Symlink '%s' removed\n",symplink_path);
 
     return 0;
 }
-
